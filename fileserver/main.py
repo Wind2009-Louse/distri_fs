@@ -8,7 +8,7 @@ import time
 nearby_servers = []
 timeout_times = {}
 fileversion = {}
-version_filename = "%s/dir.txt"%os.getcwd()
+version_filename = os.path.join(os.getcwd(),"dir.txt")
 Lock = threading.Lock()
 TIMEOUT_TIME = 3
 
@@ -17,16 +17,16 @@ def dir_md5(dir):
 
 def file_realname(dir):
     global self_port
-    dir_name = "%s/files_%d" % (os.getcwd(), self_port)
+    dir_name = os.path.join(os.getcwd(),"files_%d"%self_port)
     if not os.path.exists(dir_name):
         os.mkdir(dir_name)
-    return "%s/files_%d/%s" % (os.getcwd(), self_port, dir_md5(dir))
+    return os.path.join(dir_name, dir_md5(dir))
 
 def update_version():
     global fileversion
     global self_port
     write_json = json.dumps(fileversion)
-    filename = "%s/dir_%d.txt"%(os.getcwd(), self_port)
+    filename = os.path.join(os.getcwd(),"dir_%d.txt"%self_port)
     new_file = open(filename, 'w')
     new_file.write(write_json)
     new_file.close()
@@ -146,7 +146,7 @@ class filesystem(xmlrpc.XMLRPC):
         global self_port
         tocheck_data = json.loads(versionjson)
         for fullname in fileversion:
-            file_localname = "%s/files_%d/%s" % (os.getcwd(), self_port, dir_md5(fullname))
+            file_localname = os.path.join(os.getcwd(), "files_%d"%self_port, dir_md5(fullname))
             if fullname not in tocheck_data\
                     or (fileversion[fullname] > tocheck_data[fullname] and tocheck_data[fullname] != -1)\
                     or (fileversion[fullname] == -1 and tocheck_data[fullname] != -1):
@@ -163,8 +163,9 @@ class filesystem(xmlrpc.XMLRPC):
     def xmlrpc_findfile(self, full_filename):
         global fileversion
         Lock.acquire()
-        hash_name = dir_md5(full_filename)
-        if full_filename in fileversion and not os.path.exists("%s/files_%d/%s" % (os.getcwd(), self_port, hash_name)):
+        file_localname = os.path.join(os.getcwd(), "files_%d"%self_port, dir_md5(full_filename))
+        if full_filename in fileversion \
+            and not os.path.exists(file_localname):
             fileversion.pop(full_filename)
         if full_filename not in fileversion:
             Lock.release()
@@ -284,7 +285,7 @@ if __name__ == '__main__':
 
     self_port = int(input("Input open port:"))
     connect_to_server(self_port)
-    filename = "%s/dir_%d.txt" % (os.getcwd(), self_port)
+    filename = os.path.join(os.getcwd(),"dir_%d.txt"%self_port)
 
     # load fileversion
     if os.path.exists(filename):

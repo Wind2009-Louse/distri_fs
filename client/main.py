@@ -4,16 +4,16 @@ import os
 import json
 
 fileversion = {}
-version_filename = "%s/dir.txt"%os.getcwd()
+version_filename = os.path.join(os.getcwd(),"dir.txt")
 
 def dir_md5(dir):
     return hashlib.md5(bytes(dir,encoding='utf-8')).hexdigest()
 
 def file_realname(dir):
-    dir_name = "%s/cache"%(os.getcwd())
+    dir_name = os.path.join(os.getcwd(),"cache")
     if not os.path.exists(dir_name):
         os.mkdir(dir_name)
-    return "%s/cache/%s" % (os.getcwd(), dir_md5(dir))
+    return os.path.join(os.getcwd(), "cache", dir_md5(dir))
 
 def update_version():
     global fileversion
@@ -132,7 +132,7 @@ if __name__ == '__main__':
                     f_srv.writefile(version, real_file, after_data)
             except Exception as err:
                 print(format(err))
-        elif command == "Exit":
+        elif command in ["Exit",'exit','Quit','quit']:
             print("Bye!")
             exit(0)
         else:

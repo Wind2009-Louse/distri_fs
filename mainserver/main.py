@@ -13,7 +13,7 @@ subserver_port = []
 timeout_times = {}
 deleting_file = []
 
-dir_filename = "%s/dir.txt"%os.getcwd()
+dir_filename = os.path.join(os.getcwd(),"dir.txt")
 
 def update_dirfile():
     global file_dirs
@@ -48,10 +48,10 @@ class dir_backup(threading.Thread):
                 Lock.release()
                 write_json = json.dumps(self.last_dir)
                 current_time = time.strftime("%Y-%m-%d %H-%M-%S.txt", time.localtime())
-                mf_dir = "%s/backup"%os.getcwd()
+                mf_dir = os.path.join(os.getcwd(), "backup")
                 if not os.path.exists(mf_dir):
                     os.mkdir(mf_dir)
-                back_dir = "%s/backup/%s"%(os.getcwd(), current_time)
+                back_dir = os.path.join(os.getcwd(), "backup", current_time)
                 back_file = open(back_dir,'w')
                 back_file.write(write_json)
                 back_file.close()
@@ -194,7 +194,7 @@ class filedirsystem(xmlrpc.XMLRPC):
         else:
             Lock.release()
             raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s." % dir)
-    def xmlrpc_cd(selfs, dir, cmd):
+    def xmlrpc_cd(self, dir, cmd):
         Lock.acquire()
         dir_cpy = file_dirs
         Lock.release()
