@@ -203,11 +203,6 @@ def xmlrpc_readfile(full_filename):
     Lock.release()
 
     acquire_flock(full_filename)
-
-    if full_filename=="/test.txt":
-        while(1):
-            a = 1
-
     open_file = open(real_filename,'rb')
     data = open_file.read() # data: bytes
     open_file.close()
