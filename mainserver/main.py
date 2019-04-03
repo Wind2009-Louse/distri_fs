@@ -2,7 +2,11 @@ import json
 import os
 import time
 import threading
-from twisted.web import xmlrpc, server
+from xmlrpc.server import SimpleXMLRPCServer
+from socketserver import ThreadingMixIn
+
+class ThreadXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
+    pass
 
 file_dirs = {"/":[]}
 BACKUP_TIME = 10
@@ -148,218 +152,217 @@ def get_versions_from_server(full_filename):
     return result_list
 
 # RPC
-class filedirsystem(xmlrpc.XMLRPC):
-    def xmlrpc_addsubserver(self, port):
-        if port not in subserver_port:
-            subserver_port.append(port)
-        print("New server: %d" % port)
+def xmlrpc_addsubserver(port):
+    if port not in subserver_port:
+        subserver_port.append(port)
+    print("New server: %d" % port)
+    return 0
+def xmlrpc_dir(dir):
+    Lock.acquire()
+    dir_cpy = file_dirs
+    Lock.release()
+    print("%sdir"%dir)
+    if dir in dir_cpy:
+        dir_list = []
+        file_list = []
+        for f in dir_cpy[dir]:
+            if f[len(f)-1] == '/':
+                dir_list.append(f)
+            else:
+                file_list.append(f)
+        return_str = ""
+        for f in dir_list:
+            return_str += (f + "\n")
+        for f in file_list:
+            return_str += (f + "\n")
+        return return_str
+    else:
+        raise Exception("No such directory.")
+def xmlrpc_mkdir(dir, newdir):
+    if len(newdir) == 0:
         return 0
-    def xmlrpc_dir(self, dir):
-        Lock.acquire()
-        dir_cpy = file_dirs
-        Lock.release()
-        print("%sdir"%dir)
-        if dir in dir_cpy:
-            dir_list = []
-            file_list = []
-            for f in dir_cpy[dir]:
-                if f[len(f)-1] == '/':
-                    dir_list.append(f)
-                else:
-                    file_list.append(f)
-            return_str = ""
-            for f in dir_list:
-                return_str += (f + "\n")
-            for f in file_list:
-                return_str += (f + "\n")
-            return return_str
-        else:
-            raise xmlrpc.Fault(404, "No such directory.")
-    def xmlrpc_mkdir(self, dir, newdir):
-        if len(newdir) == 0:
-            return 0
-        Lock.acquire()
-        if newdir[len(newdir)-1] != '/':
-            newdir += '/'
-        print("%smkdir %s"%(dir,newdir))
-        if dir in file_dirs:
-            if newdir in file_dirs[dir]:
-                Lock.release()
-                raise xmlrpc.Fault(403, "There're already the same directory in %s while creating %s."%(dir,newdir))
-            file_dirs[dir].append(newdir)
-            file_dirs[dir+newdir] = []
-            update_dirfile()
+    Lock.acquire()
+    if newdir[len(newdir)-1] != '/':
+        newdir += '/'
+    print("%smkdir %s"%(dir,newdir))
+    if dir in file_dirs:
+        if newdir in file_dirs[dir]:
             Lock.release()
-            return 0
-        else:
-            Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s." % dir)
-    def xmlrpc_cd(self, dir, cmd):
-        Lock.acquire()
-        dir_cpy = file_dirs
+            raise Exception("There're already the same directory in %s while creating %s."%(dir,newdir))
+        file_dirs[dir].append(newdir)
+        file_dirs[dir+newdir] = []
+        update_dirfile()
         Lock.release()
-        print("%scd %s" % (dir, cmd))
-        if cmd == '..':
-            new_dir = get_parent_dir(dir)[0]
-            if new_dir not in dir_cpy:
-                raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s."%new_dir)
-            return new_dir
-        else:
-            if len(cmd)==0:
-                raise xmlrpc.Fault(403, "Forbidden operation.")
-            if cmd[len(cmd)-1]!='/':
-                cmd+='/'
-            if cmd[0] != '/':
-                new_dir = dir + cmd
-            else:
-                new_dir = cmd
-            if new_dir not in dir_cpy:
-                raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s." % new_dir)
-            else:
-                return new_dir
-    def xmlrpc_rm(self, dir, cmd):
+        return 0
+    else:
+        Lock.release()
+        raise Exception("You're trying to enter a directory that doesn't exist: %s." % dir)
+def xmlrpc_cd(dir, cmd):
+    Lock.acquire()
+    dir_cpy = file_dirs
+    Lock.release()
+    print("%scd %s" % (dir, cmd))
+    if cmd == '..':
+        new_dir = get_parent_dir(dir)[0]
+        if new_dir not in dir_cpy:
+            raise Exception("You're trying to enter a directory that doesn't exist: %s."%new_dir)
+        return new_dir
+    else:
         if len(cmd)==0:
-            raise xmlrpc.Fault(403, "Forbidden operation.")
-        if cmd == '/':
-            raise xmlrpc.Fault(403, "You can't delete root.")
-        Lock.acquire()
-        print("%srm %s" % (dir, cmd))
-        # make cmd delete from root
-        is_delete_dir = cmd[len(cmd)-1] == '/'
+            raise Exception("Forbidden operation.")
+        if cmd[len(cmd)-1]!='/':
+            cmd+='/'
         if cmd[0] != '/':
-            cmd = dir + cmd
-        # delete directory from root
-        if is_delete_dir:
-            if cmd not in file_dirs:
-                Lock.release()
-                raise xmlrpc.Fault(404, "You're trying to delete directory which doesn't exists: %s." % cmd)
-            # delete everything from the directory
-            todelete = []
-            for _k in file_dirs.keys():
-                if _k[0:len(cmd)] == cmd:
-                    todelete.append(_k)
-            for _k in todelete:
-                for _f in file_dirs[_k]:
-                    if (_f[len(_f)-1] != '/'):
-                        deleting_file.append((_k + _f))
-                file_dirs.pop(_k)
-            # get return dir
-            parent, name = get_parent_dir(cmd)
-            name += '/'
-            if parent not in file_dirs or name not in file_dirs[parent]:
-                Lock.release()
-                raise xmlrpc.Fault(1, "Error occured while delete file.")
+            new_dir = dir + cmd
+        else:
+            new_dir = cmd
+        if new_dir not in dir_cpy:
+            raise Exception("You're trying to enter a directory that doesn't exist: %s." % new_dir)
+        else:
+            return new_dir
+def xmlrpc_rm(dir, cmd):
+    if len(cmd)==0:
+        raise Exception("Forbidden operation.")
+    if cmd == '/':
+        raise Exception("You can't delete root.")
+    Lock.acquire()
+    print("%srm %s" % (dir, cmd))
+    # make cmd delete from root
+    is_delete_dir = cmd[len(cmd)-1] == '/'
+    if cmd[0] != '/':
+        cmd = dir + cmd
+    # delete directory from root
+    if is_delete_dir:
+        if cmd not in file_dirs:
+            Lock.release()
+            raise Exception("You're trying to delete directory which doesn't exists: %s." % cmd)
+        # delete everything from the directory
+        todelete = []
+        for _k in file_dirs.keys():
+            if _k[0:len(cmd)] == cmd:
+                todelete.append(_k)
+        for _k in todelete:
+            for _f in file_dirs[_k]:
+                if (_f[len(_f)-1] != '/'):
+                    deleting_file.append((_k + _f))
+            file_dirs.pop(_k)
+        # get return dir
+        parent, name = get_parent_dir(cmd)
+        name += '/'
+        if parent not in file_dirs or name not in file_dirs[parent]:
+            Lock.release()
+            raise Exception("Error occured while delete file.")
+        file_dirs[parent].remove(name)
+        # get return dir
+        if dir not in file_dirs:
+            return_dir = "/"
+        else:
+            return_dir = dir
+        update_dirfile()
+        Lock.release()
+        return return_dir
+    # delete file
+    else:
+        parent, name = get_parent_dir(cmd)
+        if parent in file_dirs and name in file_dirs[parent]:
             file_dirs[parent].remove(name)
-            # get return dir
-            if dir not in file_dirs:
-                return_dir = "/"
-            else:
-                return_dir = dir
+            deleting_file.append((parent + name))
             update_dirfile()
             Lock.release()
-            return return_dir
-        # delete file
+            return dir
         else:
-            parent, name = get_parent_dir(cmd)
-            if parent in file_dirs and name in file_dirs[parent]:
-                file_dirs[parent].remove(name)
-                deleting_file.append((parent + name))
-                update_dirfile()
-                Lock.release()
-                return dir
-            else:
-                Lock.release()
-                raise xmlrpc.Fault(404, "You're trying to delete file which doesn't exists: %s." % cmd)
-    def xmlrpc_create(self, dir, cmd):
-        if len(cmd) == 0:
-            raise xmlrpc.Fault(403, "Forbidden Operation.")
-        if len(subserver_port) == 0:
-            raise xmlrpc.Fault(404, "No live server.")
-        if cmd[0] == '/':
-            full_filename = cmd
-        else:
-            full_filename = dir + cmd
-        Lock.acquire()
-        print("%smf %s" % (dir, cmd))
-        parent, filename = get_parent_dir(full_filename)
-        if parent not in file_dirs:
             Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s." % parent)
-        if filename in file_dirs[parent]:
-            Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to create a file that already exists: %s." % full_filename)
-        result_list = get_versions_from_server(full_filename)
-        if len(result_list) == 0:
-            Lock.release()
-            raise xmlrpc.Fault(404, "No live server.")
-        sort_result = sorted(result_list)
-        newest_port = sort_result[0]
-        if result_list[newest_port] != -1:
-            Lock.release()
-            raise xmlrpc.Fault(404, "There're already such file in the system.")
-        try:
-            result = create_file(newest_port, full_filename)
-            file_dirs[parent].append(filename)
-            update_dirfile()
-            Lock.release()
-            return result
-        except:
-            Lock.release()
-            raise xmlrpc.Fault(404, "Error occured.")
-    def xmlrpc_read(self, dir, cmd):
-        if len(cmd) == 0:
-            raise xmlrpc.Fault(403, "Forbidden Operation.")
-        if len(subserver_port) == 0:
-            raise xmlrpc.Fault(404, "No live server.")
-        if cmd[0] == '/':
-            full_filename = cmd
-        else:
-            full_filename = dir + cmd
-        Lock.acquire()
-        print("%sopen %s" % (dir, cmd))
-        parent, filename = get_parent_dir(full_filename)
-        if parent not in file_dirs:
-            Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s." % parent)
-        if filename not in file_dirs[parent]:
-            Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to read a file that doesn't exists: %s." % full_filename)
-        result_list = get_versions_from_server(full_filename)
-        if len(result_list) == 0:
-            Lock.release()
-            raise xmlrpc.Fault(404, "No live server.")
-        sort_result = sorted(result_list)
-        newest_port = sort_result[0]
-        if result_list[newest_port] == -1:
-            Lock.release()
-            raise xmlrpc.Fault(404, "There're no such file in the system.")
+            raise Exception("You're trying to delete file which doesn't exists: %s." % cmd)
+def xmlrpc_create(dir, cmd):
+    if len(cmd) == 0:
+        raise Exception("Forbidden Operation.")
+    if len(subserver_port) == 0:
+        raise Exception("No live server.")
+    if cmd[0] == '/':
+        full_filename = cmd
+    else:
+        full_filename = dir + cmd
+    Lock.acquire()
+    print("%smf %s" % (dir, cmd))
+    parent, filename = get_parent_dir(full_filename)
+    if parent not in file_dirs:
         Lock.release()
-        return result_list[newest_port],newest_port
-    def xmlrpc_write(self, full_filename, version):
-        Lock.acquire()
-        parent, filename = get_parent_dir(full_filename)
-        if parent not in file_dirs:
-            Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s." % parent)
-        if filename not in file_dirs[parent]:
-            Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to read a file that doesn't exists: %s." % full_filename)
-        result_list = get_versions_from_server(full_filename)
-        if len(result_list) == 0:
-            Lock.release()
-            raise xmlrpc.Fault(404, "No live server.")
-        sort_result = sorted(result_list)
-        newest_port = sort_result[0]
-        if result_list[newest_port] > version:
-            Lock.release()
-            raise xmlrpc.Fault(404, "Someone submits before you submit this file.")
+        raise Exception("You're trying to enter a directory that doesn't exist: %s." % parent)
+    if filename in file_dirs[parent]:
         Lock.release()
-        return newest_port
-    def xmlrpc_delete(self, dir, cmd):
+        raise Exception("You're trying to create a file that already exists: %s." % full_filename)
+    result_list = get_versions_from_server(full_filename)
+    if len(result_list) == 0:
+        Lock.release()
+        raise Exception("No live server.")
+    sort_result = sorted(result_list)
+    newest_port = sort_result[0]
+    if result_list[newest_port] != -1:
+        Lock.release()
+        raise Exception("There're already such file in the system.")
+    try:
+        result = create_file(newest_port, full_filename)
+        file_dirs[parent].append(filename)
+        update_dirfile()
+        Lock.release()
+        return result
+    except:
+        Lock.release()
+        raise Exception("Error occured.")
+def xmlrpc_read(dir, cmd):
+    if len(cmd) == 0:
+        raise Exception("Forbidden Operation.")
+    if len(subserver_port) == 0:
+        raise Exception("No live server.")
+    if cmd[0] == '/':
+        full_filename = cmd
+    else:
+        full_filename = dir + cmd
+    Lock.acquire()
+    print("%sopen %s" % (dir, cmd))
+    parent, filename = get_parent_dir(full_filename)
+    if parent not in file_dirs:
+        Lock.release()
+        raise Exception("You're trying to enter a directory that doesn't exist: %s." % parent)
+    if filename not in file_dirs[parent]:
+        Lock.release()
+        raise Exception("You're trying to read a file that doesn't exists: %s." % full_filename)
+    result_list = get_versions_from_server(full_filename)
+    if len(result_list) == 0:
+        Lock.release()
+        raise Exception("No live server.")
+    sort_result = sorted(result_list)
+    newest_port = sort_result[0]
+    if result_list[newest_port] == -1:
+        Lock.release()
+        raise Exception("There're no such file in the system.")
+    Lock.release()
+    return result_list[newest_port],newest_port
+def xmlrpc_write(full_filename, version):
+    Lock.acquire()
+    parent, filename = get_parent_dir(full_filename)
+    if parent not in file_dirs:
+        Lock.release()
+        raise Exception("You're trying to enter a directory that doesn't exist: %s." % parent)
+    if filename not in file_dirs[parent]:
+        Lock.release()
+        raise Exception("You're trying to read a file that doesn't exists: %s." % full_filename)
+    result_list = get_versions_from_server(full_filename)
+    if len(result_list) == 0:
+        Lock.release()
+        raise Exception("No live server.")
+    sort_result = sorted(result_list)
+    newest_port = sort_result[0]
+    if result_list[newest_port] > version:
+        Lock.release()
+        raise Exception("Someone submits before you submit this file.")
+    Lock.release()
+    return newest_port
+def xmlrpc_delete(dir, cmd):
         if len(cmd) == 0:
-            raise xmlrpc.Fault(403, "Forbidden Operation.")
+            raise Exception("Forbidden Operation.")
         if len(subserver_port) == 0:
-            raise xmlrpc.Fault(404, "No live server.")
+            raise Exception("No live server.")
         if cmd[0] == '/':
             full_filename = cmd
         else:
@@ -369,20 +372,17 @@ class filedirsystem(xmlrpc.XMLRPC):
         parent, filename = get_parent_dir(full_filename)
         if parent not in file_dirs:
             Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to enter a directory that doesn't exist: %s." % parent)
+            raise Exception("You're trying to enter a directory that doesn't exist: %s." % parent)
         if filename not in file_dirs[parent]:
             Lock.release()
-            raise xmlrpc.Fault(404, "You're trying to read a file that doesn't exists: %s." % full_filename)
+            raise Exception("You're trying to read a file that doesn't exists: %s." % full_filename)
         deleting_file.append(full_filename)
         file_dirs[parent].remove(filename)
         update_dirfile()
         Lock.release()
         return 0
-    def xmlrpc_fault(self):
-        raise xmlrpc.Fault(1, "Unknown error.")
 
 if __name__ == '__main__':
-    from twisted.internet import reactor
     if os.path.exists(dir_filename):
         read_file = open(dir_filename,'r')
         data = read_file.read()
@@ -407,7 +407,15 @@ if __name__ == '__main__':
     del_thread.start()
 
     # rpc server
-    rpc_srv = filedirsystem()
-    reactor.listenTCP(9999, server.Site(rpc_srv))
+    server = ThreadXMLRPCServer(('localhost', 9999)) # 初始化
+    server.register_function(xmlrpc_addsubserver, "addsubserver")
+    server.register_function(xmlrpc_dir, "dir")
+    server.register_function(xmlrpc_mkdir, "mkdir")
+    server.register_function(xmlrpc_cd, "cd")
+    server.register_function(xmlrpc_rm, "rm")
+    server.register_function(xmlrpc_create, "create")
+    server.register_function(xmlrpc_read, "read")
+    server.register_function(xmlrpc_write, "write")
+    server.register_function(xmlrpc_delete, "delete")
     print("Main server begins to run.")
-    reactor.run()
+    server.serve_forever() # 保持等待调用状态
